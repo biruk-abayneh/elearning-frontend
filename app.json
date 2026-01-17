@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "elearning-frontend",
+    "slug": "elearning-frontend",
+    "version": "1.0.0",
+    "jsEngine": "hermes",
+    "plugins": [
+      "expo-asset"
+    ],
+    "android": {
+      "jsEngine": "hermes"
+    },
+    "ios": {
+      "jsEngine": "hermes"
+    }
+  }
+}
