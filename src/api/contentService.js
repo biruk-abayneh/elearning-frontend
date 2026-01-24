@@ -54,6 +54,21 @@ export const getQuestions = async (chapterId) => {
   }
 };
 
+export const getChapterExplanations = async (chapterId) => {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${API_URL}/chapters/${chapterId}/explanations`, {
+      method: 'GET',
+      headers
+    });
+
+    if (!response.ok) throw new Error('Failed to fetch explanations');
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching explanations:", error);
+    return {};
+  }
+};
 // 4. Submit Answer
 export const submitAttempt = async (attemptData) => {
   try {
@@ -167,5 +182,20 @@ export const uploadBulkQuestions = async (chapterId, questionsObj) => {
     const errorData = await response.json();
     throw new Error(errorData.error || 'Bulk upload failed');
   }
+  return await response.json();
+};
+
+export const saveQuizAttempt = async (attemptData) => {
+  const headers = await getAuthHeaders();
+  return fetch(`${API_URL}/attempts/save`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(attemptData)
+  });
+};
+
+export const getDashboardData = async () => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/dashboard`, { headers });
   return await response.json();
 };

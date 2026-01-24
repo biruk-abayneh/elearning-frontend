@@ -1,14 +1,37 @@
 {
   "expo": {
-    "name": "elearning-frontend",
-    "slug": "elearning-frontend",
+    "name": "elearning",
+    "slug": "elearning",
     "version": "1.0.0",
     "jsEngine": "hermes",
     "plugins": [
-      "expo-asset"
+      "expo-asset",
+      "expo-web-browser"
+    ],
+    "scheme": "elearning",
+    "platforms": [
+      "ios",
+      "android"
     ],
     "android": {
-      "jsEngine": "hermes"
+      "jsEngine": "hermes",
+      "package": "com.elearning.elearning",
+      "scheme": "elearning",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "elearning"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "ios": {
       "jsEngine": "hermes"

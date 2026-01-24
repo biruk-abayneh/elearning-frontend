@@ -1,6 +1,64 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import React, { useState, useEffect, useRef, memo, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, Alert, Dimensions,
+  TouchableOpacity, FlatList, ScrollView, ActivityIndicator,
+  Platform, BackHandler, Vibration
+} from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { getQuestions, submitAttempt } from '../api/contentService';
+import { useFocusEffect } from '@react-navigation/native';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// --- 1. LIGHTWEIGHT QUESTION ITEM ---
+const QuestionItem = memo(({ item, index, currentIndex, isReviewMode, selectedOption, onSelect, showFeedback, isCorrect }) => {
+  const isVisible = Math.abs(currentIndex - index) <= 1;
+
+  if (!isVisible) {
+    return <View style={{ width: SCREEN_WIDTH, height: 400 }} />;
+  }
+
+  return (
+    <View style={{ width: SCREEN_WIDTH }}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <Text style={styles.questionText}>{item.question_text}</Text>
+
+        {item.options.map((option, optIndex) => {
+          const isSelected = selectedOption === option;
+
+          let dynamicStyle = {};
+          if (isReviewMode) {
+            if (option === item.correct_option) dynamicStyle = styles.correctBorder;
+            else if (isSelected) dynamicStyle = styles.wrongBorder;
+          } else if (showFeedback && isSelected) {
+            dynamicStyle = isCorrect ? styles.correctBorder : styles.wrongBorder;
+          } else if (isSelected) {
+            dynamicStyle = styles.selectedOption;
+          }
+
+          return (
+            <TouchableOpacity
+              key={optIndex}
+              disabled={isReviewMode || showFeedback}
+              style={[styles.optionButton, dynamicStyle]}
+              onPress={() => onSelect(option)}
+            >
+              <Text style={styles.optionText}>{option}</Text>
+            </TouchableOpacity>
+          );
+        })}
+        <View style={{ height: 140 }} />
+      </ScrollView>
+    </View>
+  );
+}, (prev, next) => {
+  return (
+    prev.currentIndex === next.currentIndex &&
+    prev.selectedOption === next.selectedOption &&
+    prev.showFeedback === next.showFeedback &&
+    prev.isReviewMode === next.isReviewMode
+  );
+});
 
 const QuizScreen = ({ route, navigation }) => {
   const { chapterId } = route.params;
@@ -9,286 +67,229 @@ const QuizScreen = ({ route, navigation }) => {
   const [selectedOption, setSelectedOption] = useState(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [isCorrect, setIsCorrect] = useState(null);
-  const [explanation, setExplanation] = useState("");
-  const [sessionScore, setSessionScore] = useState(0); // Tracks correct answers in this run
+  const [sessionScore, setSessionScore] = useState(0);
   const [isReviewMode, setIsReviewMode] = useState(false);
-  const [showExplanation, setShowExplanation] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [timerStarted, setTimerStarted] = useState(false);
-  const [isTimerActive, setIsTimerActive] = useState(!isReviewMode);
+
+  const flatListRef = useRef(null);
+
+  // Calculate Progress percentage
+  const progress = questions.length > 0 ? (currentIndex + 1) / questions.length : 0;
+
+  const triggerFinishResults = useCallback(() => {
+    setTimerStarted(false);
+    Alert.alert("Quiz Finished", `Final Score: ${sessionScore}/${questions.length}`, [
+      { text: "Review Answers", onPress: () => setIsReviewMode(true) },
+      { text: "Exit", onPress: () => navigation.popToTop() }
+    ]);
+  }, [sessionScore, questions.length, navigation]);
+
+  const handleFinishEarly = () => {
+    Alert.alert("Finish Now?", "Are you sure you want to end the quiz and see your current score?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Finish", style: "destructive", onPress: triggerFinishResults }
+    ]);
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        if (!isReviewMode) {
+          Alert.alert("Exit?", "Progress will be lost.", [
+            { text: "Stay" }, { text: "Exit", onPress: () => navigation.popToTop() }
+          ]);
+          return true;
+        }
+        return false;
+      };
+      const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => sub.remove();
+    }, [isReviewMode, navigation])
+  );
 
   useEffect(() => {
-    const fetchQuestions = async () => {
-      const data = await getQuestions(chapterId);
-      setQuestions(data);
-    };
-    fetchQuestions();
+    getQuestions(chapterId).then(data => setQuestions(data.map(q => ({ ...q, id: q.id.toString() }))));
   }, [chapterId]);
 
-
   useEffect(() => {
-    if (questions && questions.length > 0 && !timerStarted && !isReviewMode) {
+    if (questions.length > 0 && !timerStarted) {
       setTimeLeft(questions.length * 90);
       setTimerStarted(true);
     }
-  }, [questions]);
+  }, [questions, timerStarted]);
 
-  // 3. Only run the countdown if timerStarted is true
   useEffect(() => {
     let timer;
     if (timerStarted && timeLeft > 0 && !isReviewMode) {
-      timer = setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
-      }, 1000);
-    } else if (timerStarted && timeLeft === 0 && !isReviewMode) {
-      handleFinishQuiz();
+      timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
+    } else if (timeLeft === 0 && timerStarted && !isReviewMode) {
+      triggerFinishResults();
     }
     return () => clearInterval(timer);
-  }, [timerStarted, timeLeft, isReviewMode]);
+  }, [timerStarted, timeLeft, isReviewMode, triggerFinishResults]);
 
-  // Helper to format seconds into MM:SS
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-  };
+  const onScrollEnd = useCallback((e) => {
+    const pageNum = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+    if (pageNum !== currentIndex) {
+      setCurrentIndex(pageNum);
+      setSelectedOption(questions[pageNum]?.userSelection || null);
+      setShowFeedback(questions[pageNum]?.userSelection ? true : false);
+    }
+  }, [currentIndex, questions]);
 
-  const handleFinishQuiz = () => {
-    setIsTimerActive(false);
-    // Trigger your existing logic for finishing the quiz/showing final results
-    Alert.alert("Quiz Finished", "Time is up or you have chose to finish.");
+  const handleSubmit = async () => {
+    const result = await submitAttempt({
+      questionId: questions[currentIndex].id,
+      selectedOption,
+      chapterId
+    });
+
+    if (result.correct) {
+      setSessionScore(s => s + 1);
+    } else {
+      Vibration.vibrate(100);
+    }
+
+    const updated = [...questions];
+    updated[currentIndex] = {
+      ...updated[currentIndex],
+      userSelection: selectedOption,
+      correct_option: result.correct_option,
+      explanation: result.explanation
+    };
+
+    setQuestions(updated);
+    setIsCorrect(result.correct);
+    setShowFeedback(true);
   };
 
   const handleNext = () => {
     if (currentIndex < questions.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-      setShowFeedback(false);
+      flatListRef.current?.scrollToIndex({ index: currentIndex + 1, animated: true });
+      setCurrentIndex(c => c + 1);
       setSelectedOption(null);
-      setShowExplanation(false); // Reset explanation toggle for next question
+      setShowFeedback(false);
     } else {
-      const totalQuestions = questions.length;
-      const percentage = Math.round((sessionScore / totalQuestions) * 100);
-
-      Alert.alert(
-        "Exam Finished! 🏆",
-        `Your Score: ${sessionScore} / ${totalQuestions}\nAccuracy: ${percentage}%`,
-        [
-          {
-            text: "Review Answers",
-            onPress: () => {
-              setIsReviewMode(true);
-              setCurrentIndex(0); // Go back to start of quiz for review
-            }
-          },
-          {
-            text: "Finish",
-            onPress: () => navigation.navigate('Subjects')
-          }
-        ]
-      );
+      triggerFinishResults();
     }
   };
 
-
-  const handleSubmit = async () => {
-    const currentQuestion = questions[currentIndex];
-
-    // Call our backend to check the answer
-    const result = await submitAttempt({
-      questionId: currentQuestion.id,
-      selectedOption: selectedOption,
-      chapterId: chapterId
-    });
-
-    if (result.correct) {
-      setSessionScore(prev => prev + 1); // Only increment if the backend says it's right
-    }
-
-    setIsCorrect(result.correct);
-    setExplanation(result.explanation);
-    setShowFeedback(true);
-  };
-
-  if (questions.length === 0) return <Text>Loading...</Text>;
-
-  const currentQuestion = questions[currentIndex];
+  if (questions.length === 0) return <ActivityIndicator style={{ flex: 1 }} />;
 
   return (
-    <ScrollView style={styles.container}>
-      {/* 1. Timer and Finish Now Header - Keep this! */}
-      {!isReviewMode && timerStarted && (
-        <View style={styles.timerHeader}>
-          <Text style={[styles.timerText, timeLeft < 60 && { color: 'red' }]}>
-            Time Remaining: {formatTime(timeLeft)}
-          </Text>
-          <TouchableOpacity
-            style={styles.finishNowBtn}
-            onPress={() => {
-              Alert.alert(
-                "Finish Quiz",
-                "Are you sure you want to end the quiz now?",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Finish",
-                    onPress: () => navigation.goBack() // Or your finish logic
-                  }
-                ]
-              );
-            }}
-          >
-            <Text style={styles.finishNowText}>Finish Now</Text>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#fff' }}>
+      {/* 1. HEADER WITH FINISH BUTTON AND TIMER */}
+      <View style={styles.header}>
+        {!isReviewMode ? (
+          <TouchableOpacity onPress={handleFinishEarly} style={styles.finishBtn}>
+            <Text style={styles.finishBtnText}>Finish Now</Text>
           </TouchableOpacity>
-        </View>
-      )}
+        ) : (
+          <Text style={styles.reviewTitle}>Review Mode</Text>
+        )}
 
-      {/* 2. Main Question Content - Only one copy! */}
-      <View style={styles.scoreHeader}>
-        <Text style={styles.scoreText}>
-          {isReviewMode ? "Reviewing Results" : `Current Score: ${sessionScore}`}
-        </Text>
-        <Text style={styles.progressText}>Question: {currentIndex + 1}/{questions.length}</Text>
+        {!isReviewMode && (
+          <View style={styles.timerContainer}>
+            <Text style={[styles.timerText, timeLeft < 60 && { color: '#f44336' }]}>
+              {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
+            </Text>
+          </View>
+        )}
       </View>
 
-      <Text style={styles.questionText}>{currentQuestion.question_text}</Text>
+      {/* 2. PROGRESS BAR */}
+      <View style={styles.progressBarContainer}>
+        <View style={[styles.progressBarFill, { width: `${progress * 100}%` }]} />
+      </View>
 
-      {currentQuestion.options.map((option, index) => (
-        <TouchableOpacity
-          key={index}
-          style={[
-            styles.optionButton,
-            selectedOption === option && styles.selectedOption,
-            isReviewMode && option === currentQuestion.correct_option && { borderColor: 'green', borderWidth: 2 }
-          ]}
-          onPress={() => !showFeedback && !isReviewMode && setSelectedOption(option)}
-        >
-          <Text>{option}</Text>
-        </TouchableOpacity>
-      ))}
+      <FlatList
+        ref={flatListRef}
+        data={questions}
+        horizontal
+        pagingEnabled
+        scrollEnabled={isReviewMode}
+        onMomentumScrollEnd={onScrollEnd}
+        keyExtractor={item => item.id}
+        getItemLayout={(_, i) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * i, index: i })}
+        initialNumToRender={1}
+        windowSize={3}
+        removeClippedSubviews={Platform.OS === 'android'}
+        renderItem={({ item, index }) => (
+          <QuestionItem
+            item={item} index={index} currentIndex={currentIndex}
+            isReviewMode={isReviewMode} selectedOption={selectedOption}
+            onSelect={setSelectedOption} showFeedback={showFeedback} isCorrect={isCorrect}
+          />
+        )}
+      />
 
-      {/* --- REVIEW MODE LOGIC --- */}
-      {isReviewMode ? (
-        <View style={styles.reviewContainer}>
+      <View style={styles.bottomBar}>
+        {!showFeedback && !isReviewMode ? (
           <TouchableOpacity
-            style={styles.explanationBtn}
-            onPress={() => setShowExplanation(!showExplanation)}
+            style={[styles.btn, !selectedOption && { backgroundColor: '#ccc' }]}
+            onPress={handleSubmit}
+            disabled={!selectedOption}
           >
-            <Text style={styles.btnText}>
-              {showExplanation ? "Hide Explanation" : "Show Explanation"}
-            </Text>
-          </TouchableOpacity>
-
-          {showExplanation && (
-            <View style={styles.explanationBox}>
-              <Text style={styles.explanationText}>
-                {currentQuestion.explanation}
-              </Text>
-            </View>
-          )}
-
-          <TouchableOpacity style={styles.nextBtn} onPress={handleNext}>
-            <Text style={styles.btnText}>
-              {currentIndex < questions.length - 1 ? "Next Reviewed Question" : "Exit Review"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        /* --- REGULAR EXAM MODE --- */
-        !showFeedback ? (
-          <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
             <Text style={styles.btnText}>Submit Answer</Text>
           </TouchableOpacity>
         ) : (
-          <View style={styles.feedbackBox}>
-            <Text style={isCorrect ? styles.correctText : styles.wrongText}>
-              {isCorrect ? "Correct!" : "Incorrect"}
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: isReviewMode ? '#2196f3' : (isCorrect ? '#4caf50' : '#f44336') }]}
+            onPress={handleNext}
+          >
+            <Text style={styles.btnText}>
+              {currentIndex < questions.length - 1 ? "Continue" : "View Final Results"}
             </Text>
-            <Text style={styles.explanationText}>{explanation}</Text>
-
-            <TouchableOpacity style={styles.nextBtn} onPress={handleNext}>
-              <Text style={styles.btnText}>
-                {currentIndex < questions.length - 1 ? "Next Question" : "Finish Chapter"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )
-      )}
-    </ScrollView>
+          </TouchableOpacity>
+        )}
+      </View>
+    </GestureHandlerRootView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20 },
-  questionText: { fontSize: 18, marginBottom: 20, fontWeight: '600' },
-  optionButton: { padding: 15, borderWidth: 1, borderColor: '#ccc', marginBottom: 10, borderRadius: 5 },
-  selectedOption: { backgroundColor: '#e3f2fd', borderColor: '#2196f3' },
-  submitBtn: { backgroundColor: '#2196f3', padding: 15, borderRadius: 5, marginTop: 20 },
-  btnText: { color: '#fff', textAlign: 'center', fontWeight: 'bold' },
-  feedbackBox: { marginTop: 20, padding: 15, backgroundColor: '#f9f9f9', borderRadius: 5 },
-  correctText: { color: 'green', fontWeight: 'bold', fontSize: 18 },
-  wrongText: { color: 'red', fontWeight: 'bold', fontSize: 18 },
-  explanationText: { marginTop: 10, fontStyle: 'italic' },
-  nextBtn: { backgroundColor: '#4caf50', padding: 15, borderRadius: 5, marginTop: 10 },
-  scoreHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 10,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 8,
-    marginBottom: 15,
-  },
-  scoreText: {
-    fontWeight: 'bold',
-    color: '#2196f3',
-  },
-  progressText: {
-    color: '#666',
-  },
-  explanationBtn: {
-    backgroundColor: '#607d8b',
-    padding: 12,
-    borderRadius: 5,
-    marginTop: 15,
-  },
-  explanationBox: {
-    padding: 15,
-    backgroundColor: '#eceff1',
-    borderRadius: 5,
-    marginTop: 10,
-    borderLeftWidth: 4,
-    borderLeftColor: '#607d8b',
-  },
-  reviewContainer: {
-    marginTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-    paddingTop: 10,
-  },
-  timerHeader: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 10,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 15,
+    backgroundColor: '#fff'
+  },
+  finishBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#fff5f5',
+    borderWidth: 1,
+    borderColor: '#feb2b2',
+  },
+  finishBtnText: { color: '#c53030', fontWeight: 'bold', fontSize: 13 },
+  reviewTitle: { fontSize: 18, fontWeight: 'bold', color: '#4a5568' },
+  timerText: { fontSize: 17, fontWeight: 'bold', color: '#444', fontVariant: ['tabular-nums'] },
+  progressBarContainer: { height: 6, width: '100%', backgroundColor: '#edf2f7' },
+  progressBarFill: { height: '100%', backgroundColor: '#3182ce' },
+  scrollContent: { padding: 20 },
+  questionText: { fontSize: 19, fontWeight: '600', marginBottom: 20, lineHeight: 26, color: '#2d3748', fontFamily: Platform.OS === 'ios' ? 'Helvetica' : 'poppins' },
+  optionButton: { padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 12, backgroundColor: '#fff' },
+  optionText: { fontSize: 16, color: '#4a5568' },
+  selectedOption: { backgroundColor: '#ebf8ff', borderColor: '#3182ce' },
+  correctBorder: { borderColor: '#48bb78', borderWidth: 2, backgroundColor: '#f0fff4' },
+  wrongBorder: { borderColor: '#f56565', borderWidth: 2, backgroundColor: '#fff5f5' },
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    width: '100%',
+    padding: 20,
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    marginBottom: 10,
+    borderTopWidth: 1,
+    borderColor: '#edf2f7',
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20
   },
-  timerText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  finishNowBtn: {
-    backgroundColor: '#ff5252',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 5,
-  },
-  finishNowText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  }
+  btn: { backgroundColor: '#3182ce', padding: 16, borderRadius: 12, alignItems: 'center' },
+  btnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }
 });
 
 export default QuizScreen;
