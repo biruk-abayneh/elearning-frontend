@@ -1,29 +1,39 @@
 {
   "expo": {
-    "name": "elearning",
-    "slug": "elearning",
+    "name": "Nerd Out",
+    "slug": "nerd_out",
     "version": "1.0.0",
-    "jsEngine": "hermes",
-    "plugins": [
-      "expo-asset",
-      "expo-web-browser"
+    "orientation": "portrait",
+    "icon": "./assets/no-icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/no-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F172A"
+    },
+    "assetBundlePatterns": [
+      "**/*"
     ],
-    "scheme": "elearning",
-    "platforms": [
-      "ios",
-      "android"
-    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.nerdout.app",
+      "jsEngine": "hermes"
+    },
     "android": {
+      "package": "com.nerdout.app",
+      "versionCode": 1,
       "jsEngine": "hermes",
-      "package": "com.elearning.elearning",
-      "scheme": "elearning",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/no-icon.png",
+        "backgroundColor": "#0F172A"
+      },
       "intentFilters": [
         {
           "action": "VIEW",
           "autoVerify": true,
           "data": [
             {
-              "scheme": "elearning"
+              "scheme": "nerdout"
             }
           ],
           "category": [
@@ -33,8 +43,28 @@
         }
       ]
     },
-    "ios": {
-      "jsEngine": "hermes"
+    "web": {
+      "favicon": "./assets/no-icon.png"
+    },
+    "scheme": "nerdout",
+    "plugins": [
+      "expo-asset",
+      "expo-web-browser",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/PlusJakartaSans-Bold.ttf",
+            "./assets/fonts/Poppins-Regular.ttf",
+            "./assets/fonts/Poppins-Bold.ttf"
+          ]
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "eacb503c-e011-4159-b9ed-9270d6260d18"
+      }
     }
   }
 }

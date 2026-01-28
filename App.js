@@ -1,15 +1,17 @@
 import React, { useContext, useEffect, useRef } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, StatusBar } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createDrawerNavigator, DrawerContentScrollView, DrawerItemList, DrawerItem } from '@react-navigation/drawer';
 import * as Linking from 'expo-linking';
 import { supabase } from './src/supabaseClient';
-
-// 1. Import the Auth Context and Provider
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, AuthContext } from './src/context/AuthContext';
+import * as SplashScreen from 'expo-splash-screen';
+import { useFonts } from 'expo-font';
 
-// Import all the screens
+// Import all screens
 import AuthScreen from './src/screens/AuthScreen';
 import SubjectScreen from './src/screens/SubjectScreen';
 import ChapterScreen from './src/screens/ChapterScreen';
@@ -22,177 +24,223 @@ import LoadingScreen from './src/screens/loadingScreen';
 
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
-// Helper to extract values from the URL hash (#access_token=...)
-/*
-const getParameterByName = (name, url) => {
-  name = name.replace(/[\[\]]/g, '\\$&');
-  var regex = new RegExp('[#&]' + name + '(=([^&#]*)|&|#|$)'),
-    results = regex.exec(url);
-  if (!results) return null;
-  if (!results[2]) return '';
-  return decodeURIComponent(results[2].replace(/\+/g, ' '));
-};
-*/
+SplashScreen.preventAutoHideAsync();
 
-// 2. Custom Drawer Content to handle Logout and Conditional Admin Link
 const CustomDrawerContent = (props) => {
   const { user, logout } = useContext(AuthContext);
+  // 2. GET INSETS
+  const insets = useSafeAreaInsets();
 
   return (
-    <DrawerContentScrollView {...props}>
-      <View style={{ padding: 20, marginBottom: 20, backgroundColor: '#f0f7ff' }}>
-        <Text style={{ fontSize: 18, fontWeight: 'bold' }}>
-          {user?.full_name || 'Loading Name...'}
+    <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 0 }}>
+      {/* BRANDED HEADER AREA WITH SAFE AREA FIX */}
+      <View style={[
+        drawerStyles.header,
+        { paddingTop: insets.top + 20 } // Pushes content below notification bar
+      ]}>
+        {/* 3. USE APP ICON INSTEAD OF TEXT */}
+        <Image
+          source={require('./assets/no-icon.png')} // Replace with your actual filename
+          style={drawerStyles.appIcon}
+          resizeMode="contain"
+        />
+        <Text style={drawerStyles.userName}>
+          {user?.full_name || 'Nerd User'}
         </Text>
-        <Text style={{ color: '#007AFF', fontSize: 12 }}>
-          Logged in as: {user?.role?.toUpperCase()}
-        </Text>
+        <View style={drawerStyles.roleBadge}>
+          <Text style={drawerStyles.roleText}>{user?.role?.toUpperCase()}</Text>
+        </View>
       </View>
 
-      {/* Renders the default links (Subjects, Profile) */}
-      <DrawerItemList {...props} />
-
-      {/* Show Admin Panel link only if user is admin */}
-      {user?.role === 'admin' && (
-        <DrawerItem
-          label="Admin Panel"
-          onPress={() => props.navigation.navigate('Admin')}
+      <View style={drawerStyles.linksContainer}>
+        <DrawerItemList
+          {...props}
+          activeTintColor="#2B65EC"
+          labelStyle={{ fontFamily: 'PlusJakartaSans-Bold', fontSize: 16 }}
         />
-      )}
 
-      {/* Logout Button */}
-      <DrawerItem
-        label="Logout"
-        onPress={async () => {
-          await logout();
-        }}
-        labelStyle={{ color: '#FF3B30', fontWeight: 'bold' }}
-      />
+        {user?.role === 'admin' && (
+          <DrawerItem
+            label="Admin Panel"
+            labelStyle={{ fontFamily: 'PlusJakartaSans-Bold', color: '#2B65EC' }}
+            icon={() => <Ionicons name="shield-checkmark" size={20} color="#2B65EC" />}
+            onPress={() => props.navigation.navigate('Admin')}
+          />
+        )}
+      </View>
+
+      <TouchableOpacity
+        style={[drawerStyles.logoutBtn, { marginBottom: insets.bottom + 20 }]}
+        onPress={async () => await logout()}
+      >
+        <Ionicons name="log-out-outline" size={22} color="#FF00FF" />
+        <Text style={drawerStyles.logoutText}>DITCH SESSION</Text>
+      </TouchableOpacity>
     </DrawerContentScrollView>
   );
 };
 
-// 3. The Drawer Navigator
+// ... (MainDrawer and RootNavigator remain the same)
 const MainDrawer = () => {
   return (
-    <Drawer.Navigator
-      drawerContent={(props) => <CustomDrawerContent {...props} />}
-      screenOptions={{
-        headerShown: true,
-      }}
-    >
-      <Drawer.Screen name="Subjects" component={SubjectScreen} options={{ title: 'All Subjects' }} />
-      <Drawer.Screen name="Profile" component={ProfileScreen} />
-      <Drawer.Screen
-        name="Dashboard"
-        component={DashboardScreen}
-        options={{
-          title: 'My Progress',
-          drawerLabel: 'Dashboard'
-        }}
-      />
+    <>
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
+      <Drawer.Navigator
+        drawerContent={(props) => <CustomDrawerContent {...props} />}
+        screenOptions={{
+          headerShown: true,
+          headerStatusBarHeight: undefined,
+          drawerActiveBackgroundColor: 'rgba(0, 255, 255, 0.1)', // Soft Cyan fade [cite: 27]
+          drawerActiveTintColor: '#2B65EC', // Your Primary Blue
+          drawerInactiveTintColor: '#4A5568', // Subtle gray for inactive links
 
-    </Drawer.Navigator>
+          drawerLabelStyle: {
+            fontFamily: 'PlusJakartaSans-Bold', // Branding alignment [cite: 34]
+            fontSize: 15,
+            marginLeft: -10, // Pull text closer to icons
+          },
+          drawerItemStyle: {
+            borderRadius: 12, // Rounded UI components [cite: 29]
+            marginVertical: 4,
+            marginHorizontal: 8,
+            paddingHorizontal: 4,
+            // Adds a sharp "Active" indicator on the left
+            borderLeftWidth: 4,
+            borderLeftColor: 'transparent',
+          },
+        }}
+      >
+        <Drawer.Screen name="Subjects" component={SubjectScreen} options={{ title: 'All Subjects' }} />
+        <Drawer.Screen name="Profile" component={ProfileScreen} />
+        <Drawer.Screen
+          name="Dashboard"
+          component={DashboardScreen}
+          options={{ title: 'My Progress', drawerLabel: 'Dashboard' }}
+        />
+      </Drawer.Navigator>
+    </>
   );
 };
 
-// 4. The Root Navigator switches between Login and the App
 const RootNavigator = () => {
   const { user, loading } = useContext(AuthContext);
-  /*
-  useEffect(() => {
-    const handleUrl = async (url) => {
-      console.log("RootNavigator: Processing URL for tokens...");
-
-      const accessToken = getParameterByName('access_token', url);
-      const refreshToken = getParameterByName('refresh_token', url);
-
-      if (accessToken && refreshToken) {
-        console.log("RootNavigator: Tokens found! Setting session...");
-        const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
-
-        if (error) console.error("RootNavigator: SetSession Error:", error.message);
-      }
-    };
-    
-
-    // Listen for incoming links
-    const subscription = Linking.addEventListener('url', (event) => handleUrl(event.url));
-
-    // Check if the app was opened via a link
-    Linking.getInitialURL().then((url) => {
-      if (url) handleUrl(url);
-    });
-
-    return () => subscription.remove();
-  }, []);
-  */
-
-  if (loading)
-    return <LoadingScreen />;
-  ;
+  if (loading) return <LoadingScreen />;
 
   return (
     <Stack.Navigator>
       {user ? (
         <>
-          {/* Main App entry is now the Drawer */}
           <Stack.Screen name="HomeDrawer" component={MainDrawer} options={{ headerShown: false }} />
-
-          {/* Screens that shouldn't have a side menu (like the Quiz) stay in the Stack */}
           <Stack.Screen name="Chapters" component={ChapterScreen} />
           <Stack.Screen name="Quiz" component={QuizScreen} />
           <Stack.Screen name="Admin" component={AdminScreen} />
-
         </>
       ) : (
-        <>
-          <Stack.Screen name="Login" component={AuthScreen} options={{ headerShown: false }} />
-        </>
+        <Stack.Screen name="Login" component={AuthScreen} options={{ headerShown: false }} />
       )}
-      <Stack.Screen
-        name="ResetPassword"
-        component={ResetPasswordScreen}
-        options={{ title: 'Reset Your Password' }}
-      />
+      <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} options={{ title: 'Reset Password' }} />
     </Stack.Navigator>
   );
 };
 
 export default function App() {
-  const navigationRef = useRef(); // Create a ref for the navigation container
+  const navigationRef = useRef();
+
+  const [fontsLoaded] = useFonts({
+    'PlusJakartaSans-Bold': require('./assets/fonts/PlusJakartaSans-Bold.ttf'),
+    'Poppins-Regular': require('./assets/fonts/Poppins-Regular.ttf'),
+    'Poppins-Bold': require('./assets/fonts/Poppins-Bold.ttf'),
+  });
 
   useEffect(() => {
-    // This handles the app being opened via a link while it's already running
+    async function prepare() {
+      if (fontsLoaded) {
+        // 2. HIDE SPLASH SCREEN ONCE READY
+        await SplashScreen.hideAsync();
+      }
+    }
+    prepare();
+  }, [fontsLoaded]);
+
+  useEffect(() => {
     const handleDeepLink = (event) => {
       let data = Linking.parse(event.url);
-      if (data.path === 'reset-password') {
-        navigationRef.current?.navigate('ResetPassword');
-      }
+      if (data.path === 'reset-password') navigationRef.current?.navigate('ResetPassword');
     };
-
     const subscription = Linking.addEventListener('url', handleDeepLink);
-
-    // This handles the app being opened via a link from a "closed" state
-    Linking.getInitialURL().then((url) => {
-      if (url) {
-        let data = Linking.parse(url);
-        if (data.path === 'reset-password') {
-          navigationRef.current?.navigate('ResetPassword');
-        }
-      }
-    });
-
     return () => subscription.remove();
   }, []);
+
+  if (!fontsLoaded) {
+    return null; // The splash screen remains visible here
+  }
+
   return (
-    <AuthProvider>
-      <NavigationContainer ref={navigationRef}>
-        <RootNavigator />
-      </NavigationContainer>
-    </AuthProvider>
+    // 4. WRAP EVERYTHING IN SAFEAREAPROVIDER
+    <SafeAreaProvider>
+      <AuthProvider>
+        <NavigationContainer ref={navigationRef}>
+          <RootNavigator />
+        </NavigationContainer>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
+
+const drawerStyles = StyleSheet.create({
+  header: {
+    backgroundColor: '#0F172A',
+    padding: 30,
+    marginBottom: 20,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 255, 255, 0.1)',
+  },
+  // ADDED ICON STYLE
+  appIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: 15,
+    shadowColor: '#00FFFF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+  },
+  userName: {
+    color: '#F8FAFC',
+    fontSize: 22,
+    fontFamily: 'PlusJakartaSans-Bold',
+  },
+  roleBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginTop: 8,
+  },
+  roleText: {
+    color: '#00FFFF',
+    fontSize: 10,
+    letterSpacing: 1,
+    fontFamily: 'Poppins-Bold',
+  },
+  linksContainer: { paddingHorizontal: 12 },
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    marginTop: 40,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  logoutText: {
+    marginLeft: 15,
+    fontFamily: 'PlusJakartaSans-Bold',
+    color: '#FF00FF',
+    fontSize: 14,
+    letterSpacing: 1,
+  }
+});

@@ -1,19 +1,34 @@
 import React, { useState, useContext, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import {
+    View, Text, TextInput, TouchableOpacity, StyleSheet,
+    Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform, ScrollView
+} from 'react-native';
 import { supabase } from '../supabaseClient';
 import { AuthContext } from '../context/AuthContext';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Checkbox } from 'expo-checkbox';
 
 WebBrowser.maybeCompleteAuthSession();
+
+// --- BRAND CONSTANTS ---
+const THEME = {
+    primaryBlue: '#2B65EC',
+    cyan: '#00FFFF',
+    magenta: '#FF00FF',
+    background: '#FFFFFF',
+    textMain: '#1A202C',
+    textSub: '#718096',
+    fontHeader: 'PlusJakartaSans-Bold', // Ensure linked 
+    fontBody: 'Poppins-Regular',       // Ensure linked 
+    fontBodyBold: 'Poppins-Bold',
+};
 
 const AuthScreen = ({ navigation }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [fullName, setFullName] = useState(''); // NEW: State for the user's name
+    const [fullName, setFullName] = useState('');
     const [loading, setLoading] = useState(false);
     const [isSignUp, setIsSignUp] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
@@ -30,28 +45,18 @@ const AuthScreen = ({ navigation }) => {
         };
         loadSavedEmail();
     }, []);
+
     const handleGoogleLogin = async () => {
         try {
             const redirectUrl = Linking.createURL('home');
             const { data, error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
-                options: {
-                    redirectTo: redirectUrl,
-                },
+                options: { redirectTo: redirectUrl },
             });
-
             if (error) throw error;
-
-            // This opens the Google login page in the phone's browser
             if (data?.url) {
-                // 1. Assign the return value to 'result'
                 const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-
-                // 2. Now 'result' exists and you can check its type
-                if (result.type === 'success') {
-                    // This forces a refresh of the session after the browser closes
-                    // supabase-js will now read the URL and set the session
-                }
+                if (result.type === 'success') { /* Session handled by AuthContext */ }
             }
         } catch (error) {
             Alert.alert("Google login error:", error.message);
@@ -59,247 +64,260 @@ const AuthScreen = ({ navigation }) => {
     };
 
     const handleAuth = async () => {
-        // Validation check for Name if signing up
         if (!email || !password || (isSignUp && !fullName)) {
-            Alert.alert("Error", "Please fill in all fields");
+            Alert.alert("Error", "Fill in everything. Don't be lazy."); // Brand tone [cite: 19]
             return;
         }
 
         setLoading(true);
         if (isSignUp) {
-            // REGISTER with Metadata
             const { data, error } = await supabase.auth.signUp({
                 email,
                 password,
-                options: {
-                    data: {
-                        full_name: fullName, // This triggers the SQL to save to your profiles table
-                    }
-                }
+                options: { data: { full_name: fullName } }
             });
-
             if (error) Alert.alert("Sign Up Error", error.message);
-            else Alert.alert("Success", "Check your email for confirmation!");
+            else Alert.alert("Success", "Check your email. Fast."); // Brand tone 
         } else {
-            // LOGIN
-            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            const { error } = await supabase.auth.signInWithPassword({ email, password });
             if (error) {
                 Alert.alert("Login Error", error.message);
             } else {
-                // SUCCESS: Handle "Remember Me" logic
-                if (rememberMe) {
-                    await AsyncStorage.setItem('rememberedEmail', email);
-                } else {
-                    await AsyncStorage.removeItem('rememberedEmail');
-                }
+                if (rememberMe) await AsyncStorage.setItem('rememberedEmail', email);
+                else await AsyncStorage.removeItem('rememberedEmail');
             }
-            // Note: onAuthStateChange in AuthContext will handle setUser automatically
         }
         setLoading(false);
     };
-    // Inside your LoginScreen.js
+
     const handleForgotPassword = async () => {
         if (!email) {
-            Alert.alert("Error", "Please enter your email address first.");
+            Alert.alert("Error", "We need an email to help you out.");
             return;
         }
-
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-            // This URL must be registered in your Supabase Dashboard
             redirectTo: 'elearning://reset-password',
         });
-
-        if (error) {
-            Alert.alert("Error", error.message);
-        } else {
-            Alert.alert("Check your email", "A password reset link has been sent.");
-        }
+        if (error) Alert.alert("Error", error.message);
+        else Alert.alert("Email Sent", "Go check your inbox.");
     };
 
     return (
-        <View style={styles.container}>
-            <Text style={styles.title}>{isSignUp ? "Create Account" : "Welcome Back"}</Text>
-
-            {/* NEW: Full Name Input only visible during Sign Up */}
-            {isSignUp && (
-                <TextInput
-                    style={styles.input}
-                    placeholder="Full Name"
-                    value={fullName}
-                    onChangeText={setFullName}
+        <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.container}
+        >
+            <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+                {/* BRAND LOGO */}
+                <Image
+                    source={require('../../assets/nerd_logo_text.svg')}
+                    style={styles.logo}
+                    resizeMode="contain"
                 />
-            )}
 
-            <TextInput
-                style={styles.input}
-                placeholder="Email"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-            />
-            <View style={styles.passwordContainer}>
-                <TextInput
-                    style={styles.inputStyle}
-                    placeholder="Password"
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword} // Toggle based on state
-                />
-                <TouchableOpacity
-                    style={styles.icon}
-                    onPress={() => setShowPassword(!showPassword)}
-                >
-                    <Ionicons
-                        name={showPassword ? "eye-off" : "eye"}
-                        size={24}
-                        color="#666"
-                    />
-                </TouchableOpacity>
-
-            </View>
-
-            <View style={styles.rememberMeContainer}>
-                <TouchableOpacity
-                    style={styles.checkboxRow}
-                    onPress={() => setRememberMe(!rememberMe)}
-                >
-                    <Ionicons
-                        name={rememberMe ? "checkbox" : "square-outline"}
-                        size={20}
-                        color="#2196f3"
-                    />
-                    <Text style={styles.rememberMeText}>Remember Email</Text>
-                </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.button} onPress={handleAuth} disabled={loading}>
-                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{isSignUp ? "Sign Up" : "Login"}</Text>}
-            </TouchableOpacity>
-
-            <View style={styles.dividerContainer}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>OR</Text>
-                <View style={styles.dividerLine} />
-            </View>
-
-            <TouchableOpacity
-                style={styles.googleButton}
-                onPress={handleGoogleLogin}
-            >
-                <View style={styles.googleIconWrapper}>
-                    <AntDesign name="google" size={20} color="#EA4335" />
-                </View>
-                <Text style={styles.googleButtonText}>Continue with Google</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)} style={styles.toggle}>
-                <Text style={styles.toggleText}>
-                    {isSignUp ? "Already have an account? Login" : "Don't have an account? Sign Up"}
+                <Text style={styles.title}>
+                    {isSignUp ? "Join the nerds.🤓" : "Welcome back."} {/*  */}
                 </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-                onPress={handleForgotPassword}
-                style={styles.forgotContainer}
-            >
-                <Text style={styles.forgotText}>Forgot Password?</Text>
-            </TouchableOpacity>
-        </View>
+
+                <View style={styles.form}>
+                    {isSignUp && (
+                        <View style={styles.inputWrapper}>
+                            <Text style={styles.label}>Name</Text>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="What do people call you?"
+                                placeholderTextColor="#A0AEC0"
+                                value={fullName}
+                                onChangeText={setFullName}
+                            />
+                        </View>
+                    )}
+
+                    <View style={styles.inputWrapper}>
+                        <Text style={styles.label}>Email</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="nerd@example.com"
+                            placeholderTextColor="#A0AEC0"
+                            value={email}
+                            onChangeText={setEmail}
+                            autoCapitalize="none"
+                            keyboardType="email-address"
+                        />
+                    </View>
+
+                    <View style={styles.inputWrapper}>
+                        <Text style={styles.label}>Password</Text>
+                        <View style={styles.passwordContainer}>
+                            <TextInput
+                                style={styles.inputStyle}
+                                placeholder="Keep it secret"
+                                placeholderTextColor="#A0AEC0"
+                                value={password}
+                                onChangeText={setPassword}
+                                secureTextEntry={!showPassword}
+                            />
+                            <TouchableOpacity
+                                style={styles.icon}
+                                onPress={() => setShowPassword(!showPassword)}
+                            >
+                                <Ionicons
+                                    name={showPassword ? "eye-off" : "eye"}
+                                    size={22}
+                                    color={THEME.textSub}
+                                />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+
+                    <View style={styles.row}>
+                        <TouchableOpacity
+                            style={styles.checkboxRow}
+                            onPress={() => setRememberMe(!rememberMe)}
+                        >
+                            <Ionicons
+                                name={rememberMe ? "checkbox" : "square-outline"}
+                                size={20}
+                                color={THEME.primaryBlue}
+                            />
+                            <Text style={styles.rememberMeText}>Remember me</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity onPress={handleForgotPassword}>
+                            <Text style={styles.forgotText}>Forgot your password?</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity style={styles.mainButton} onPress={handleAuth} disabled={loading}>
+                        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{isSignUp ? "GET STARTED" : "LOG IN"}</Text>}
+                    </TouchableOpacity>
+
+                    <View style={styles.dividerContainer}>
+                        <View style={styles.dividerLine} />
+                        <Text style={styles.dividerText}>OR</Text>
+                        <View style={styles.dividerLine} />
+                    </View>
+
+                    <TouchableOpacity style={styles.googleButton} onPress={handleGoogleLogin}>
+                        <AntDesign name="google" size={20} color="#EA4335" style={{ marginRight: 10 }} />
+                        <Text style={styles.googleButtonText}>Continue with Google</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)} style={styles.toggle}>
+                        <Text style={styles.toggleText}>
+                            {isSignUp ? "Already a nerd? " : "New here? "}
+                            <Text style={{ color: THEME.primaryBlue, fontFamily: THEME.fontBodyBold }}>
+                                {isSignUp ? "Login" : "Sign Up"}
+                            </Text>
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            </ScrollView>
+        </KeyboardAvoidingView>
     );
 };
 
 const styles = StyleSheet.create({
-    container: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: '#fff' },
-    title: { fontSize: 28, fontWeight: 'bold', marginBottom: 30, textAlign: 'center', color: '#2196f3' },
-    input: { borderWidth: 1, borderColor: '#ddd', padding: 15, borderRadius: 8, marginBottom: 15, fontSize: 16, backgroundColor: '#fff' },
-    button: { backgroundColor: '#2196f3', padding: 15, borderRadius: 8, alignItems: 'center' },
-    buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-    toggle: { marginTop: 20, alignItems: 'center' },
-    toggleText: { color: '#2196f3' },
-    forgotContainer: {
-        marginTop: 15,
-        alignItems: 'center',
+    container: { flex: 1, backgroundColor: THEME.background },
+    scrollContainer: { padding: 24, justifyContent: 'center', flexGrow: 1 },
+    logo: { width: 160, height: 60, alignSelf: 'center', marginBottom: 10 },
+    title: {
+        fontFamily: THEME.fontHeader,
+        fontSize: 26,
+        textAlign: 'center',
+        color: THEME.textMain,
+        marginBottom: 40
     },
-    forgotText: {
-        color: '#2196f3',
-        fontWeight: '600',
-        textDecorationLine: 'underline',
+    form: { width: '100%' },
+    inputWrapper: { marginBottom: 20 },
+    label: {
+        fontFamily: THEME.fontHeader,
+        fontSize: 14,
+        color: THEME.textMain,
+        marginBottom: 8,
+        marginLeft: 4
+    },
+    input: {
+        borderWidth: 2,
+        borderColor: '#E2E8F0',
+        padding: 16,
+        borderRadius: 16,
+        fontSize: 16,
+        fontFamily: THEME.fontBody,
+        backgroundColor: '#FFF',
+        color: THEME.textMain
     },
     passwordContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#ddd',
-        borderRadius: 8,
-        marginBottom: 15,
-        backgroundColor: '#fff',
+        borderWidth: 2,
+        borderColor: '#E2E8F0',
+        borderRadius: 16,
+        backgroundColor: '#FFF',
     },
     inputStyle: {
         flex: 1,
-        padding: 15, // Match the padding of your 'input' style exactly
+        padding: 16,
         fontSize: 16,
-        color: '#000',
+        fontFamily: THEME.fontBody,
+        color: THEME.textMain,
     },
-    icon: {
-        padding: 10,
+    icon: { paddingRight: 15 },
+    row: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 30
     },
+    checkboxRow: { flexDirection: 'row', alignItems: 'center' },
+    rememberMeText: {
+        marginLeft: 8,
+        color: THEME.textSub,
+        fontFamily: THEME.fontBody,
+        fontSize: 14
+    },
+    forgotText: {
+        color: THEME.magenta,
+        fontFamily: THEME.fontBodyBold,
+        fontSize: 14
+    },
+    mainButton: {
+        backgroundColor: THEME.primaryBlue,
+        padding: 18,
+        borderRadius: 16,
+        alignItems: 'center',
+        shadowColor: THEME.primaryBlue,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        elevation: 4
+    },
+    buttonText: {
+        color: '#fff',
+        fontFamily: THEME.fontHeader,
+        fontSize: 16,
+        letterSpacing: 1
+    },
+    dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 25 },
+    dividerLine: { flex: 1, height: 1, backgroundColor: '#E2E8F0' },
+    dividerText: { marginHorizontal: 15, color: '#A0AEC0', fontSize: 12, fontFamily: THEME.fontHeader },
     googleButton: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#fff',
-        borderWidth: 1,
-        borderColor: '#ddd',
-        padding: 15,
-        borderRadius: 8,
-        marginTop: 15,
-        // Add a slight shadow for a "card" look (iOS)
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-        // Shadow for Android
-        elevation: 2,
-    },
-    googleIconWrapper: {
-        marginRight: 10,
+        backgroundColor: '#FFF',
+        borderWidth: 2,
+        borderColor: '#E2E8F0',
+        padding: 16,
+        borderRadius: 16,
     },
     googleButtonText: {
-        color: '#555',
-        fontWeight: '600',
-        fontSize: 16,
+        color: THEME.textMain,
+        fontFamily: THEME.fontBodyBold,
+        fontSize: 15
     },
-    dividerContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginVertical: 20,
-    },
-    dividerLine: {
-        flex: 1,
-        height: 1,
-        backgroundColor: '#eee',
-    },
-    dividerText: {
-        marginHorizontal: 10,
-        color: '#999',
-        fontSize: 12,
-        fontWeight: 'bold',
-    },
-    rememberMeContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 20,
-        justifyContent: 'flex-start',
-    },
-    checkboxRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    rememberMeText: {
-        marginLeft: 8,
-        color: '#666',
-        fontSize: 14,
-    },
+    toggle: { marginTop: 30, alignItems: 'center' },
+    toggleText: { color: THEME.textSub, fontFamily: THEME.fontBody, fontSize: 14 },
 });
 
 export default AuthScreen;

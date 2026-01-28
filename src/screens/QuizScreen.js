@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, memo, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, Alert, Dimensions,
+  View, Text, StyleSheet, Alert, Dimensions, Image,
   TouchableOpacity, FlatList, ScrollView, ActivityIndicator,
-  Platform, BackHandler, Vibration
+  Platform, BackHandler, Vibration, StatusBar
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { getQuestions, submitAttempt } from '../api/contentService';
@@ -10,43 +10,89 @@ import { useFocusEffect } from '@react-navigation/native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// --- 1. LIGHTWEIGHT QUESTION ITEM ---
+// --- BRANDING ASSETS & THEME ---
+// Based on your logo and brand document
+const THEME = {
+  // Extracted from your Logo
+  primaryBlue: '#2B65EC',
+  cyan: '#00FFFF',
+  magenta: '#FF00FF',
+
+  // Neutral & High Contrast [cite: 27, 30]
+  background: '#FFFFFF',
+  surface: '#F7FAFC',
+  textMain: '#1A202C',
+  textSub: '#718096',
+
+  // Fonts 
+  fontHeader: 'PlusJakartaSans-Bold', // Ensure these are linked in your project
+  fontBody: 'Poppins-Regular',
+  fontBodyBold: 'Poppins-Bold',
+};
+
+// --- 1. MEMOIZED QUESTION ITEM (Styled) ---
 const QuestionItem = memo(({ item, index, currentIndex, isReviewMode, selectedOption, onSelect, showFeedback, isCorrect }) => {
   const isVisible = Math.abs(currentIndex - index) <= 1;
 
   if (!isVisible) {
-    return <View style={{ width: SCREEN_WIDTH, height: 400 }} />;
+    return <View style={{ width: SCREEN_WIDTH, height: 400 }} />; // Empty placeholder for performance
   }
 
   return (
     <View style={{ width: SCREEN_WIDTH }}>
+      {/* "NO" Logo Watermark - subtle background branding */}
+      <View style={styles.watermarkContainer}>
+        <Image
+          source={require('../../assets/no_icon.svg')}
+          style={styles.watermark}
+          resizeMode="contain"
+        />
+      </View>
+
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Question Text - Plus Jakarta Sans [cite: 34] */}
         <Text style={styles.questionText}>{item.question_text}</Text>
 
         {item.options.map((option, optIndex) => {
           const isSelected = selectedOption === option;
 
-          let dynamicStyle = {};
+          // Dynamic Styles based on State
+          let containerStyle = [styles.optionButton];
+          let textStyle = [styles.optionText];
+
           if (isReviewMode) {
-            if (option === item.correct_option) dynamicStyle = styles.correctBorder;
-            else if (isSelected) dynamicStyle = styles.wrongBorder;
+            if (option === item.correct_option) {
+              containerStyle.push(styles.correctState);
+            } else if (isSelected) {
+              containerStyle.push(styles.wrongState);
+            }
           } else if (showFeedback && isSelected) {
-            dynamicStyle = isCorrect ? styles.correctBorder : styles.wrongBorder;
+            containerStyle.push(isCorrect ? styles.correctState : styles.wrongState);
           } else if (isSelected) {
-            dynamicStyle = styles.selectedOption;
+            containerStyle.push(styles.selectedState);
           }
 
           return (
             <TouchableOpacity
               key={optIndex}
               disabled={isReviewMode || showFeedback}
-              style={[styles.optionButton, dynamicStyle]}
+              style={containerStyle}
               onPress={() => onSelect(option)}
+              activeOpacity={0.8}
             >
-              <Text style={styles.optionText}>{option}</Text>
+              <Text style={textStyle}>{option}</Text>
             </TouchableOpacity>
           );
         })}
+
+        {/* Explanation Block (Only visible in review/feedback) */}
+        {(showFeedback || isReviewMode) && item.explanation && (
+          <View style={styles.explanationBox}>
+            <Text style={styles.explanationTitle}>The Nerd Breakdown:</Text>
+            <Text style={styles.explanationText}>{item.explanation}</Text>
+          </View>
+        )}
+
         <View style={{ height: 140 }} />
       </ScrollView>
     </View>
@@ -74,21 +120,22 @@ const QuizScreen = ({ route, navigation }) => {
 
   const flatListRef = useRef(null);
 
-  // Calculate Progress percentage
+  // Logic remains identical to preserve functionality
   const progress = questions.length > 0 ? (currentIndex + 1) / questions.length : 0;
 
   const triggerFinishResults = useCallback(() => {
     setTimerStarted(false);
-    Alert.alert("Quiz Finished", `Final Score: ${sessionScore}/${questions.length}`, [
-      { text: "Review Answers", onPress: () => setIsReviewMode(true) },
-      { text: "Exit", onPress: () => navigation.popToTop() }
+    // Tone: Direct, no fluff [cite: 15]
+    Alert.alert("Wrap it up?", `You scored ${sessionScore}/${questions.length}.`, [
+      { text: "Review", onPress: () => setIsReviewMode(true) },
+      { text: "I'm Done", style: "destructive", onPress: () => navigation.popToTop() }
     ]);
   }, [sessionScore, questions.length, navigation]);
 
   const handleFinishEarly = () => {
-    Alert.alert("Finish Now?", "Are you sure you want to end the quiz and see your current score?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Finish", style: "destructive", onPress: triggerFinishResults }
+    Alert.alert("Bail Out?", "Submitting now will finalize your score.", [
+      { text: "Keep Going", style: "cancel" },
+      { text: "Submit", style: "destructive", onPress: triggerFinishResults }
     ]);
   };
 
@@ -96,7 +143,7 @@ const QuizScreen = ({ route, navigation }) => {
     useCallback(() => {
       const onBackPress = () => {
         if (!isReviewMode) {
-          Alert.alert("Exit?", "Progress will be lost.", [
+          Alert.alert("Hold up!", "You'll lose your progress.", [
             { text: "Stay" }, { text: "Exit", onPress: () => navigation.popToTop() }
           ]);
           return true;
@@ -175,31 +222,45 @@ const QuizScreen = ({ route, navigation }) => {
     }
   };
 
-  if (questions.length === 0) return <ActivityIndicator style={{ flex: 1 }} />;
+  if (questions.length === 0) return <ActivityIndicator size="large" color={THEME.cyan} style={{ flex: 1 }} />;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#fff' }}>
-      {/* 1. HEADER WITH FINISH BUTTON AND TIMER */}
-      <View style={styles.header}>
-        {!isReviewMode ? (
-          <TouchableOpacity onPress={handleFinishEarly} style={styles.finishBtn}>
-            <Text style={styles.finishBtnText}>Finish Now</Text>
-          </TouchableOpacity>
-        ) : (
-          <Text style={styles.reviewTitle}>Review Mode</Text>
-        )}
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: THEME.background }}>
+      <StatusBar barStyle="dark-content" />
 
-        {!isReviewMode && (
-          <View style={styles.timerContainer}>
-            <Text style={[styles.timerText, timeLeft < 60 && { color: '#f44336' }]}>
-              {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
-            </Text>
-          </View>
-        )}
+      {/* 1. BRANDED HEADER */}
+      <View style={styles.header}>
+        {/* Left Side: Logo or Back */}
+        <View style={{ width: 80 }}>
+          {!isReviewMode && (
+            <TouchableOpacity onPress={handleFinishEarly} style={styles.smallBtn}>
+              <Text style={styles.smallBtnText}>Finish</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Center: Main Logo */}
+        <Image
+          source={require('../../assets/nerd_logo_text.svg')}
+          style={styles.headerLogo}
+          resizeMode="contain"
+        />
+
+        {/* Right Side: Timer */}
+        <View style={{ width: 80, alignItems: 'flex-end' }}>
+          {!isReviewMode && (
+            <View style={[styles.timerBadge, timeLeft < 60 && styles.timerUrgent]}>
+              <Text style={[styles.timerText, timeLeft < 60 && { color: '#FFF' }]}>
+                {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
+              </Text>
+            </View>
+          )}
+        </View>
       </View>
 
-      {/* 2. PROGRESS BAR */}
+      {/* 2. HIGH CONTRAST PROGRESS BAR  */}
       <View style={styles.progressBarContainer}>
+        {/* Cyan fill matches the logo's highlight */}
         <View style={[styles.progressBarFill, { width: `${progress * 100}%` }]} />
       </View>
 
@@ -224,22 +285,24 @@ const QuizScreen = ({ route, navigation }) => {
         )}
       />
 
+      {/* 3. ACTION BAR */}
       <View style={styles.bottomBar}>
         {!showFeedback && !isReviewMode ? (
           <TouchableOpacity
-            style={[styles.btn, !selectedOption && { backgroundColor: '#ccc' }]}
+            // Energetic: Blue button, high contrast [cite: 12, 30]
+            style={[styles.mainBtn, !selectedOption && styles.disabledBtn]}
             onPress={handleSubmit}
             disabled={!selectedOption}
           >
-            <Text style={styles.btnText}>Submit Answer</Text>
+            <Text style={styles.mainBtnText}>LOCK IT IN</Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={[styles.btn, { backgroundColor: isReviewMode ? '#2196f3' : (isCorrect ? '#4caf50' : '#f44336') }]}
+            style={[styles.mainBtn, { backgroundColor: isReviewMode ? THEME.primaryBlue : (isCorrect ? THEME.primaryBlue : THEME.magenta) }]}
             onPress={handleNext}
           >
-            <Text style={styles.btnText}>
-              {currentIndex < questions.length - 1 ? "Continue" : "View Final Results"}
+            <Text style={styles.mainBtnText}>
+              {currentIndex < questions.length - 1 ? "NEXT UP" : "SEE RESULTS"}
             </Text>
           </TouchableOpacity>
         )}
@@ -249,6 +312,7 @@ const QuizScreen = ({ route, navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  // HEADER
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -256,40 +320,157 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: 15,
-    backgroundColor: '#fff'
+    backgroundColor: THEME.background,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0'
   },
-  finishBtn: {
+  headerLogo: {
+    width: 120,
+    height: 40,
+  },
+  smallBtn: {
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    backgroundColor: '#ed0b0b',
     borderRadius: 8,
-    backgroundColor: '#fff5f5',
-    borderWidth: 1,
-    borderColor: '#feb2b2',
+    alignItems: 'center',
   },
-  finishBtnText: { color: '#c53030', fontWeight: 'bold', fontSize: 13 },
-  reviewTitle: { fontSize: 18, fontWeight: 'bold', color: '#4a5568' },
-  timerText: { fontSize: 17, fontWeight: 'bold', color: '#444', fontVariant: ['tabular-nums'] },
-  progressBarContainer: { height: 6, width: '100%', backgroundColor: '#edf2f7' },
-  progressBarFill: { height: '100%', backgroundColor: '#3182ce' },
-  scrollContent: { padding: 20 },
-  questionText: { fontSize: 19, fontWeight: '600', marginBottom: 20, lineHeight: 26, color: '#2d3748', fontFamily: Platform.OS === 'ios' ? 'Helvetica' : 'poppins' },
-  optionButton: { padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 12, backgroundColor: '#fff' },
-  optionText: { fontSize: 16, color: '#4a5568' },
-  selectedOption: { backgroundColor: '#ebf8ff', borderColor: '#3182ce' },
-  correctBorder: { borderColor: '#48bb78', borderWidth: 2, backgroundColor: '#f0fff4' },
-  wrongBorder: { borderColor: '#f56565', borderWidth: 2, backgroundColor: '#fff5f5' },
+  smallBtnText: {
+    fontFamily: THEME.fontBodyBold,
+    fontWeight: '800',
+    fontSize: 15,
+    color: '#1A202C'
+  },
+  timerBadge: {
+    backgroundColor: THEME.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  timerUrgent: {
+    backgroundColor: THEME.magenta, // Urgent logic uses branding
+    borderColor: THEME.magenta
+  },
+  timerText: {
+    fontFamily: THEME.fontHeader,
+    fontSize: 14,
+    color: THEME.textMain
+  },
+
+  // PROGRESS
+  progressBarContainer: { height: 4, width: '100%', backgroundColor: '#E2E8F0' },
+  progressBarFill: { height: '100%', backgroundColor: THEME.cyan }, // Bright accent 
+
+  // CONTENT
+  scrollContent: { padding: 24, paddingBottom: 100 },
+  watermarkContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    opacity: 0.03, // Very subtle background logo
+    zIndex: -1,
+  },
+  watermark: {
+    width: 300,
+    height: 300,
+    transform: [{ rotate: '-15deg' }]
+  },
+  questionText: {
+    fontFamily: THEME.fontHeader, // Plus Jakarta Sans [cite: 34]
+    fontSize: 22,
+    marginBottom: 30,
+    lineHeight: 32,
+    color: THEME.textMain
+  },
+
+  // OPTIONS - Rounded & High Contrast 
+  optionButton: {
+    padding: 18,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
+    marginBottom: 14,
+    backgroundColor: '#FFF',
+    // Shadow for depth
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  optionText: {
+    fontFamily: THEME.fontBody, // Poppins [cite: 35]
+    fontSize: 16,
+    color: THEME.textMain
+  },
+
+  // STATES
+  selectedState: {
+    borderColor: THEME.primaryBlue,
+    backgroundColor: '#F0F7FF'
+  },
+  correctState: {
+    borderColor: '#10B981', // Success Green
+    backgroundColor: '#D1FAE5'
+  },
+  wrongState: {
+    borderColor: THEME.magenta, // Brand error color
+    backgroundColor: '#FFF5F5'
+  },
+
+  // EXPLANATION
+  explanationBox: {
+    marginTop: 20,
+    padding: 15,
+    backgroundColor: THEME.surface,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: THEME.cyan
+  },
+  explanationTitle: {
+    fontFamily: THEME.fontHeader,
+    fontSize: 14,
+    marginBottom: 5
+  },
+  explanationText: {
+    fontFamily: THEME.fontBody,
+    color: THEME.textSub
+  },
+
+  // BOTTOM BAR
   bottomBar: {
     position: 'absolute',
     bottom: 0,
     width: '100%',
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFF',
     borderTopWidth: 1,
-    borderColor: '#edf2f7',
+    borderColor: '#F0F0F0',
     paddingBottom: Platform.OS === 'ios' ? 40 : 20
   },
-  btn: { backgroundColor: '#3182ce', padding: 16, borderRadius: 12, alignItems: 'center' },
-  btnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }
+  mainBtn: {
+    backgroundColor: THEME.primaryBlue,
+    padding: 18,
+    borderRadius: 16, // Rounded components [cite: 29]
+    alignItems: 'center',
+    shadowColor: THEME.primaryBlue,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5
+  },
+  disabledBtn: {
+    backgroundColor: '#CBD5E0',
+    shadowOpacity: 0
+  },
+  mainBtnText: {
+    color: '#FFF',
+    fontFamily: THEME.fontHeader,
+    fontSize: 16,
+    letterSpacing: 1
+  }
 });
 
 export default QuizScreen;

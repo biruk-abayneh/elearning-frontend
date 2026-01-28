@@ -1,8 +1,24 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, TextInput, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, TextInput, Alert, ScrollView, StatusBar, Image } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { getUserProgress } from '../api/contentService';
 import { AuthContext } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
+
+// --- BRAND CONSTANTS ---
+const THEME = {
+    primaryBlue: '#2B65EC',
+    cyan: '#00FFFF',
+    magenta: '#FF00FF',
+    background: '#FFFFFF',
+    surface: '#F7FAFC',
+    textMain: '#1A202C',
+    textSub: '#718096',
+    fontHeader: 'PlusJakartaSans-Bold',
+    fontBody: 'Poppins-Regular',
+    fontBodyBold: 'Poppins-Bold',
+};
 
 const ProfileScreen = () => {
     const [stats, setStats] = useState({ total: 0, correct: 0, accuracy: 0 });
@@ -11,6 +27,7 @@ const ProfileScreen = () => {
     const [isUpdating, setIsUpdating] = useState(false);
 
     const { user } = useContext(AuthContext);
+    const insets = useSafeAreaInsets();
 
     useEffect(() => {
         loadStats();
@@ -32,22 +49,17 @@ const ProfileScreen = () => {
 
     const handleUpdatePassword = async () => {
         if (newPassword.length < 6) {
-            Alert.alert("Error", "Password must be at least 6 characters long.");
+            Alert.alert("Too Short", "Make it at least 6 characters. Be safe.");
             return;
         }
-
         setIsUpdating(true);
         try {
-            const { error } = await supabase.auth.updateUser({
-                password: newPassword
-            });
-
+            const { error } = await supabase.auth.updateUser({ password: newPassword });
             if (error) throw error;
-
-            Alert.alert("Success", "Password updated successfully!");
-            setNewPassword(''); // Clear input
+            Alert.alert("Done", "Password updated. Don't forget it.");
+            setNewPassword('');
         } catch (error) {
-            Alert.alert("Update Failed", error.message);
+            Alert.alert("Failed", error.message);
         } finally {
             setIsUpdating(false);
         }
@@ -55,103 +67,217 @@ const ProfileScreen = () => {
 
     const handleLogout = async () => {
         const { error } = await supabase.auth.signOut();
-        if (error) Alert.alert("Error logging out", error.message);
+        if (error) Alert.alert("Error", "You're stuck here: " + error.message);
     };
 
     const getInitials = (email) => {
         return email ? email.substring(0, 2).toUpperCase() : "??";
     };
 
-    if (loading) return <ActivityIndicator size="large" color="#2196f3" style={{ flex: 1 }} />;
+    if (loading) return (
+        <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={THEME.primaryBlue} />
+            <Text style={styles.loadingText}>Fetching your data...</Text>
+        </View>
+    );
 
     return (
-        <ScrollView style={styles.container}>
-            <View style={styles.header}>
-                <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{getInitials(user?.email)}</Text>
-                </View>
-                <Text style={styles.userName}>{user?.full_name || 'User'}</Text>
-                <Text style={styles.userEmail}>{user?.email}</Text>
-            </View>
+        <View style={[styles.container, { paddingTop: insets.top }]}>
+            <StatusBar barStyle="dark-content" />
+            <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}>
 
-            <View style={styles.statsContainer}>
-                <View style={styles.statBox}>
-                    <Text style={styles.statNumber}>{stats.total}</Text>
-                    <Text style={styles.statLabel}>Answered</Text>
+                {/* 1. DOSSIER HEADER */}
+                <View style={styles.header}>
+                    <View style={styles.avatarContainer}>
+                        <View style={styles.avatar}>
+                            <Text style={styles.avatarText}>{getInitials(user?.email)}</Text>
+                        </View>
+                        <View style={styles.statusDot} />
+                    </View>
+                    <Text style={styles.userName}>{user?.full_name || 'Nerd User'}</Text>
+                    <Text style={styles.userEmail}>{user?.email}</Text>
                 </View>
-                <View style={styles.statBox}>
-                    <Text style={[styles.statNumber, { color: '#4caf50' }]}>{stats.accuracy}%</Text>
-                    <Text style={styles.statLabel}>Accuracy</Text>
+
+                {/* 2. STATS GRID (High Contrast) */}
+                <View style={styles.statsGrid}>
+                    <View style={[styles.statCard, { borderColor: THEME.textMain }]}>
+                        <Text style={styles.statNumber}>{stats.total}</Text>
+                        <Text style={styles.statLabel}>Attempts</Text>
+                    </View>
+                    <View style={[styles.statCard, { borderColor: THEME.cyan, backgroundColor: THEME.surface }]}>
+                        <Text style={[styles.statNumber, { color: THEME.primaryBlue }]}>{stats.accuracy}%</Text>
+                        <Text style={styles.statLabel}>Score</Text>
+                    </View>
+                    <View style={[styles.statCard, { borderColor: THEME.magenta }]}>
+                        <Text style={[styles.statNumber, { color: THEME.magenta }]}>{stats.correct}</Text>
+                        <Text style={styles.statLabel}>Correct</Text>
+                    </View>
                 </View>
-                <View style={styles.statBox}>
-                    <Text style={styles.statNumber}>{stats.correct}</Text>
-                    <Text style={styles.statLabel}>Correct</Text>
+
+                {/* 3. SECURITY SECTION */}
+                <View style={styles.section}>
+                    <View style={styles.sectionHeader}>
+                        <Ionicons name="shield-checkmark-sharp" size={20} color={THEME.primaryBlue} />
+                        <Text style={styles.sectionTitle}>Security Protocol</Text>
+                    </View>
+                    <View style={styles.inputWrapper}>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="New Password"
+                            placeholderTextColor="#A0AEC0"
+                            secureTextEntry
+                            value={newPassword}
+                            onChangeText={setNewPassword}
+                        />
+                        <TouchableOpacity
+                            style={styles.updateBtn}
+                            onPress={handleUpdatePassword}
+                            disabled={isUpdating}
+                        >
+                            {isUpdating ? (
+                                <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                                <Ionicons name="arrow-forward-sharp" size={20} color="#fff" />
+                            )}
+                        </TouchableOpacity>
+                    </View>
                 </View>
-            </View>
 
-            {/* --- NEW: Change Password Section --- */}
-            <View style={styles.passwordSection}>
-                <Text style={styles.sectionTitle}>Security</Text>
-                <TextInput
-                    style={styles.input}
-                    placeholder="New Password"
-                    placeholderTextColor="#999"
-                    secureTextEntry
-                    value={newPassword}
-                    onChangeText={setNewPassword}
-                />
-                <TouchableOpacity
-                    style={[styles.actionBtn, { backgroundColor: '#2196f3' }]}
-                    onPress={handleUpdatePassword}
-                    disabled={isUpdating}
-                >
-                    {isUpdating ? (
-                        <ActivityIndicator color="#fff" size="small" />
-                    ) : (
-                        <Text style={styles.actionBtnText}>Update Password</Text>
-                    )}
-                </TouchableOpacity>
-            </View>
+                {/* 4. ACTIONS */}
+                <View style={styles.footer}>
+                    <TouchableOpacity style={styles.refreshBtn} onPress={loadStats}>
+                        <MaterialCommunityIcons name="refresh" size={20} color={THEME.textSub} />
+                        <Text style={styles.refreshBtnText}>SYNC DATA</Text>
+                    </TouchableOpacity>
 
-            {/* Actions Section */}
-            <View style={styles.footerActions}>
-                <TouchableOpacity style={styles.refreshBtn} onPress={loadStats}>
-                    <Text style={styles.btnText}>Refresh Stats</Text>
-                </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.logoutBtn}
+                        onPress={handleLogout}
+                    >
+                        <Text style={styles.logoutBtnText}>TERMINATE SESSION</Text>
+                    </TouchableOpacity>
+                </View>
 
-                <TouchableOpacity
-                    style={[styles.refreshBtn, { borderColor: '#f44336', marginTop: 15 }]}
-                    onPress={handleLogout}
-                >
-                    <Text style={[styles.btnText, { color: '#f44336' }]}>Logout</Text>
-                </TouchableOpacity>
-            </View>
-        </ScrollView>
+            </ScrollView>
+
+            {/* Background Mark */}
+            <Image
+                source={require('../../assets/no_icon.svg')}
+                style={styles.bgWatermark}
+                resizeMode="contain"
+            />
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#f8f9fa', padding: 20 },
-    header: { alignItems: 'center', marginVertical: 30 },
-    avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#2196f3', justifyContent: 'center', alignItems: 'center' },
-    avatarText: { color: '#fff', fontSize: 30, fontWeight: 'bold' },
-    userName: { fontSize: 22, fontWeight: 'bold', marginTop: 10 },
-    userEmail: { color: '#666' },
-    statsContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 },
-    statBox: { backgroundColor: '#fff', padding: 15, borderRadius: 12, alignItems: 'center', width: '31%', elevation: 2 },
-    statNumber: { fontSize: 18, fontWeight: 'bold' },
-    statLabel: { fontSize: 11, color: '#888', marginTop: 5 },
+    container: { flex: 1, backgroundColor: THEME.background },
+    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: THEME.background },
+    loadingText: { marginTop: 10, fontFamily: THEME.fontBody, color: THEME.textSub },
+    scrollContent: { padding: 24 },
 
-    // Password Section Styles
-    passwordSection: { marginTop: 30, backgroundColor: '#fff', padding: 20, borderRadius: 12, elevation: 1 },
-    sectionTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 15, color: '#333' },
-    input: { borderBottomWidth: 1, borderColor: '#ddd', paddingVertical: 10, marginBottom: 15, color: '#333' },
-    actionBtn: { padding: 12, borderRadius: 8, alignItems: 'center' },
-    actionBtnText: { color: '#fff', fontWeight: 'bold' },
+    header: { alignItems: 'center', marginBottom: 40 },
+    avatarContainer: { position: 'relative' },
+    avatar: {
+        width: 100,
+        height: 100,
+        borderRadius: 20,
+        backgroundColor: THEME.textMain,
+        justifyContent: 'center',
+        alignItems: 'center',
+        transform: [{ rotate: '-3deg' }],
+        borderWidth: 3,
+        borderColor: THEME.cyan
+    },
+    statusDot: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        backgroundColor: '#4ade80',
+        borderWidth: 3,
+        borderColor: THEME.background
+    },
+    avatarText: { color: THEME.cyan, fontSize: 36, fontFamily: THEME.fontHeader },
+    userName: { fontSize: 28, fontFamily: THEME.fontHeader, marginTop: 15, color: THEME.textMain },
+    userEmail: { fontFamily: THEME.fontBody, color: THEME.textSub, marginTop: -4 },
 
-    footerActions: { marginBottom: 40 },
-    refreshBtn: { marginTop: 20, backgroundColor: '#fff', padding: 15, borderRadius: 10, borderWidth: 1, borderColor: '#2196f3' },
-    btnText: { color: '#2196f3', textAlign: 'center', fontWeight: 'bold' }
+    statsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 40 },
+    statCard: {
+        backgroundColor: '#fff',
+        padding: 15,
+        borderRadius: 16,
+        alignItems: 'center',
+        width: '31%',
+        borderWidth: 2,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        elevation: 2
+    },
+    statNumber: { fontSize: 22, fontFamily: THEME.fontHeader, color: THEME.textMain },
+    statLabel: { fontSize: 10, fontFamily: THEME.fontBodyBold, color: THEME.textSub, textTransform: 'uppercase', marginTop: 2 },
+
+    section: { marginBottom: 40 },
+    sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
+    sectionTitle: { fontSize: 16, fontFamily: THEME.fontHeader, marginLeft: 8, color: THEME.textMain },
+    inputWrapper: { flexDirection: 'row', alignItems: 'center' },
+    input: {
+        flex: 1,
+        borderWidth: 2,
+        borderColor: '#E2E8F0',
+        padding: 16,
+        borderRadius: 16,
+        fontFamily: THEME.fontBody,
+        color: THEME.textMain,
+        backgroundColor: THEME.surface
+    },
+    updateBtn: {
+        width: 56,
+        height: 56,
+        backgroundColor: THEME.primaryBlue,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 12
+    },
+
+    footer: { marginTop: 10 },
+    refreshBtn: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 16,
+        borderRadius: 16,
+        borderWidth: 2,
+        borderColor: '#E2E8F0'
+    },
+    refreshBtnText: { color: THEME.textSub, fontFamily: THEME.fontHeader, fontSize: 13, marginLeft: 8, letterSpacing: 1 },
+
+    logoutBtn: {
+        marginTop: 15,
+        padding: 18,
+        borderRadius: 16,
+        backgroundColor: THEME.background,
+        borderWidth: 2,
+        borderColor: THEME.magenta,
+        alignItems: 'center'
+    },
+    logoutBtnText: { color: THEME.magenta, fontFamily: THEME.fontHeader, fontSize: 14, letterSpacing: 1 },
+
+    bgWatermark: {
+        position: 'absolute',
+        top: -40,
+        right: -40,
+        width: 200,
+        height: 200,
+        opacity: 0.03,
+        zIndex: -1,
+        transform: [{ rotate: '15deg' }]
+    }
 });
 
 export default ProfileScreen;
